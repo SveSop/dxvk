@@ -2,37 +2,7 @@
 
 export WINEDEBUG=-all
 
-dlls_dir=`dirname "$(readlink -f $0)"`
-build_arch='@arch@'
-winelib='@winelib@'
-
-if [ $winelib == 'True' ]; then
-    dll_ext='dll.so'
-    # strip off the trailing bindir to get to the prefix, then append libdir
-    dlls_dir="${dlls_dir%/@bindir@}/@libdir@"
-else
-    dll_ext='dll'
-fi
-
-if [ ! -f "$dlls_dir/d3d11.$dll_ext" ] || [ ! -f "$dlls_dir/dxgi.$dll_ext" ]; then
-    echo "d3d11.$dll_ext or dxgi.$dll_ext not found in $dlls_dir" >&2
-    exit 1
-fi
-
-if [ -z "$wine" ]; then
-    if [ $build_arch == "x86_64" ]; then
-        wine="wine64"
-    else
-        wine="wine"
-    fi
-fi
-
-winever=`$wine --version | grep wine`
-if [ -z "$winever" ]; then
-    echo "$wine:"' Not a wine executable. Check your $wine.' >&2
-    exit 1
-fi
-
+dxvk_dir="$(dirname "$(dirname "$(readlink -fm "$0")")")"
 quiet=false
 assume=
 
@@ -88,32 +58,71 @@ else
         fi
     fi
 fi
-unix_sys_path="$($wine winepath -u 'C:\windows\system32')"
-if [ $? -ne 0 ]; then
-    exit 1
+
+echo Detecting WINE_ARCH
+get_wine_arch=$(wine reg QUERY "HKLM\System\CurrentControlSet\Control\Session Manager\Environment" /v PROCESSOR_ARCHITECTURE)
+
+if [[ $get_wine_arch == *"x86"* ]]; then
+      echo "Prefix is x86"
+      wine_arch='x86'
+      wine='wine'
+elif [[ $get_wine_arch == *"AMD64"* ]]; then
+      echo "Prefix is x86_64"
+      wine_arch='x86_64'
+      wine='wine64'
+else
+        echo "Unknown wine architecture"
 fi
 
+unix_sys_path=$( winepath -u c:\\windows )
 
 ret=0
 
 function removeOverride {
     echo "    [1/2] Removing override... "
-    $wine reg add 'HKEY_CURRENT_USER\Software\Wine\DllOverrides' /v $1 /d builtin /f > /dev/null 2>&1
+    $wine reg delete 'HKEY_CURRENT_USER\Software\Wine\DllOverrides' /v $1 /f > /dev/null 2>&1
     if [ $? -ne 0 ]; then
-        echo "Failed"
-        exit 1
+        echo "    No dll-override found for $1"
     fi
-    local dll="$unix_sys_path/$1.dll"
-    echo "    [2/2] Removing link... "
-    if [ -h "$dll" ]; then
-        out=$(rm "$dll" 2>&1)
-        if [ $? -ne 0 ]; then
-            ret=2
-            echo -e "$out"
+    if [ $wine_arch == 'x86' ]; then
+    	local dll="$unix_sys_path/system32/$1.dll"
+    	echo "    [2/2] Removing 32-bit link... "
+    	if [ -h "$dll" ]; then
+        	out=$(rm "$dll" 2>&1)
+        	if [ $? -ne 0 ]; then
+            	ret=2
+            	echo -e "$out"
+        	fi
+    	else
+        	echo -e "'$dll' is not a link or doesn't exist."
+        	ret=2
+    	fi
+    fi
+    if [ $wine_arch == 'x86_64' ]; then
+	local dll32="$unix_sys_path/syswow64/$1.dll"
+        echo "    [2/2] Removing 32-bit link... "
+        if [ -h "$dll32" ]; then
+                out=$(rm "$dll32" 2>&1)
+                if [ $? -ne 0 ]; then
+                ret=2
+                echo -e "$out"
+                fi
+        else
+                echo -e "'$dll32' is not a link or doesn't exist."
+                ret=2
         fi
-    else
-        echo -e "'$dll' is not a link or doesn't exist."
-        ret=2
+        local dll64="$unix_sys_path/system32/$1.dll"
+        echo "    [2/2] Removing 64-bit link... "
+        if [ -h "$dll64" ]; then
+                out=$(rm "$dll64" 2>&1)
+                if [ $? -ne 0 ]; then
+                ret=2
+                echo -e "$out"
+                fi
+        else
+                echo -e "'$dll64' is not a link or doesn't exist."
+                ret=2
+        fi
     fi
 }
 
@@ -124,11 +133,39 @@ function createOverride {
         echo -e "Failed"
         exit 1
     fi
-    echo "    [2/2] Creating link to $1.$dll_ext... "
-    ln -sf "$dlls_dir/$1.$dll_ext" "$unix_sys_path/$1.dll"
-    if [ $? -ne 0 ]; then
-        echo -e "Failed"
-        exit 1
+    if [ $wine_arch == 'x86' ]; then
+    	if [ ! -e "$dxvk_dir/x32/$1.$dll_ext" ]; then
+           echo "    No $dll_ext file found!"
+           exit 1
+    	fi
+	echo "    [2/2] Creating 32-bit link to $1.$dll_ext... "
+    	ln -sf "$dxvk_dir/x32/$1.$dll_ext" "$unix_sys_path/system32/$1.dll"
+    	if [ $? -ne 0 ]; then
+        	echo -e "Failed"
+        	exit 1
+    	fi
+    fi
+    if [ $wine_arch == 'x86_64' ]; then
+	if [ ! -e "$dxvk_dir/x32/$1.$dll_ext" ]; then
+           echo "    No $dll_ext file found!"
+           exit 1
+        fi
+	echo "    [2/2] Creating 32-bit link to $1.$dll_ext... "
+        ln -sf "$dxvk_dir/x32/$1.$dll_ext" "$unix_sys_path/syswow64/$1.dll"
+        if [ $? -ne 0 ]; then
+                echo -e "Failed"
+                exit 1
+        fi
+        echo "    [2/2] Creating 64-bit link to $1.$dll_ext... "
+        if [ ! -e "$dxvk_dir/x64/$1.$dll_ext" ]; then
+           echo "    No $dll_ext file found!"
+           exit 1
+        fi
+	ln -sf "$dxvk_dir/x64/$1.$dll_ext" "$unix_sys_path/system32/$1.dll"
+        if [ $? -ne 0 ]; then
+                echo -e "Failed"
+                exit 1
+        fi
     fi
 }
 
@@ -137,6 +174,19 @@ uninstall)
     fun=removeOverride
     ;;
 install)
+    case "$2" in
+    dll)
+	dll_ext='dll'
+ 	;;
+    winelib)
+	dll_ext='dll.so'
+	;;
+    *)
+	echo "Unrecognized option: $2"
+	echo "Usage: $0 [install|uninstall] [dll|winelib] [-q|--quiet] [-y|-n]"
+	exit 1
+	;;
+    esac
     fun=createOverride
     ;;
 *)
@@ -156,4 +206,6 @@ echo '[4/5] d3d10core:'
 $fun d3d10core
 echo '[5/5] d3d11:'
 $fun d3d11
+echo "    Making sure everything is working"
+wineboot -u
 exit $ret

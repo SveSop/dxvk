@@ -1,9 +1,7 @@
 #!/bin/bash
 
-set -e
-
 if [ -z "$1" ] || [ -z "$2" ]; then
-  echo "Usage: package-release.sh version destdir [--no-package]"
+  echo "Usage: package-release.sh version destdir [--no-winelib || --no-dll] [--no-package]"
   exit 1
 fi
 
@@ -17,6 +15,26 @@ if [ -e "$DXVK_BUILD_DIR" ]; then
   exit 1
 fi
 
+function build_winelib {
+  export WINEARCH="win$1"
+  export WINEPREFIX="$DXVK_BUILD_DIR/wine.$1"
+  
+  cd "$DXVK_SRC_DIR"
+
+  meson --cross-file "$DXVK_SRC_DIR/build-wine$1.txt"  \
+        --buildtype "release"                         \
+        --prefix "$DXVK_BUILD_DIR"	              \
+        -Dlib_dir="x$1"			      \
+	--strip                                       \
+        -Denable_tests=false                          \
+        "$DXVK_BUILD_DIR/build.$1"
+
+  cd "$DXVK_BUILD_DIR/build.$1"
+  ninja install
+
+  rm -R "$DXVK_BUILD_DIR/build.$1"
+}
+
 function build_arch {
   export WINEARCH="win$1"
   export WINEPREFIX="$DXVK_BUILD_DIR/wine.$1"
@@ -25,24 +43,17 @@ function build_arch {
 
   meson --cross-file "$DXVK_SRC_DIR/build-win$1.txt"  \
         --buildtype "release"                         \
-        --prefix "$DXVK_BUILD_DIR/install.$1"         \
-        --strip                                       \
+        --prefix "$DXVK_BUILD_DIR"	              \
+        -Dlib_dir="x$1"			      \
+	--strip                                       \
         -Denable_tests=false                          \
         "$DXVK_BUILD_DIR/build.$1"
 
   cd "$DXVK_BUILD_DIR/build.$1"
   ninja install
 
-  mkdir "$DXVK_BUILD_DIR/x$1"
-
-  cp "$DXVK_BUILD_DIR/install.$1/bin/d3d10.dll" "$DXVK_BUILD_DIR/x$1/d3d10.dll"
-  cp "$DXVK_BUILD_DIR/install.$1/bin/d3d10_1.dll" "$DXVK_BUILD_DIR/x$1/d3d10_1.dll"
-  cp "$DXVK_BUILD_DIR/install.$1/bin/d3d10core.dll" "$DXVK_BUILD_DIR/x$1/d3d10core.dll"
-  cp "$DXVK_BUILD_DIR/install.$1/bin/d3d11.dll" "$DXVK_BUILD_DIR/x$1/d3d11.dll"
-  cp "$DXVK_BUILD_DIR/install.$1/bin/dxgi.dll" "$DXVK_BUILD_DIR/x$1/dxgi.dll"
-  
   rm -R "$DXVK_BUILD_DIR/build.$1"
-  rm -R "$DXVK_BUILD_DIR/install.$1"
+  cd "$DXVK_BUILD_DIR/x$1" && rm *.a
 }
 
 function build_verb {
@@ -55,10 +66,18 @@ function package {
   rm -R "dxvk-$DXVK_VERSION"
 }
 
-build_arch 64
-build_arch 32
+if [ "$3" != "--no-dll" ]; then
+  build_arch 64
+  build_arch 32
+fi
+
+if [ "$3" != "--no-winelib" ]; then
+  build_winelib 64
+  build_winelib 32
+fi
+
 build_verb
 
-if [ "$3" != "--no-package" ]; then
+if [ "$3" != "--no-package" ] && [ "$4" != "--no-package" ]; then
   package
 fi
