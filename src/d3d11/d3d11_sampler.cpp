@@ -50,6 +50,13 @@ namespace dxvk {
       info.maxAnisotropy = float(samplerAnisotropyOption);
     }
     
+    // Enforce mip map lod bias
+    float samplerMipLODBiasOption = device->GetOptions()->samplerMipLODBias;
+
+    if (samplerMipLODBiasOption >= -1) {
+      info.mipmapLodBias = float(samplerMipLODBiasOption);
+    }
+
     m_sampler = device->GetDXVKDevice()->createSampler(info);
   }
   

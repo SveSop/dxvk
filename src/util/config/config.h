@@ -125,6 +125,10 @@ namespace dxvk {
       const std::string&  value,
             Tristate&     result);
 
+    static bool parseOptionValue(
+      const std::string&  value,
+            float&        result);
+
   };
 
 

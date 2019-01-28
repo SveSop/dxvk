@@ -222,6 +222,21 @@ namespace dxvk {
   }
 
 
+  bool Config::parseOptionValue(
+    const std::string&  value,
+          float&      result) {
+    if (value.size() == 0)
+      return false;
+    try {
+      result = std::stof(value);
+    } catch (...) {
+      // error: 'std::invalid_argument' or 'std::out_of_range'
+      return false;
+    }
+    return true;
+  }
+
+
   Config Config::getAppConfig(const std::string& appName) {
     auto appConfig = g_appDefaults.find(appName);
     if (appConfig != g_appDefaults.end()) {

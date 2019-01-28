@@ -44,6 +44,12 @@ namespace dxvk {
     /// given anisotropy value for all samplers.
     int32_t samplerAnisotropy;
     
+    /// Mip map LOD bias override
+    ///
+    /// Enforces LOD bias with the given value
+    /// for all samplers.
+    float samplerMipLODBias;
+
     /// Back buffer count for the Vulkan swap chain.
     /// Overrides DXGI_SWAP_CHAIN_DESC::BufferCount.
     int32_t numBackBuffers;
